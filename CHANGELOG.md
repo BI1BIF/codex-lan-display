@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2
+
+- Show the five-hour allowance and its hours/minutes reset countdown when Codex reports that window.
+- Detect the weekly allowance by window duration so the layout for weekly-only accounts stays the same.
+
 ## 0.1.1
 
 - Add a standalone Windows x64 tray executable and a merged firmware image for first-time flashing.

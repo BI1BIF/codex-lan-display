@@ -14,6 +14,7 @@ lv_obj_t *home,*title,*detail,*symbol,*quota,*credits,*reset,*net,*battery,*sett
 lv_obj_t* border[8];
 lv_obj_t *volume_slider,*volume_label,*settings_hint;
 lv_obj_t *header_label,*header_image;
+lv_obj_t *quota_panel,*short_quota;
 lv_obj_t *status_panel,*clock_panel,*clock_time,*clock_seconds,*clock_date;
 bool standby_eligible=false;
 uint32_t standby_since=0,test_age=0,test_clock=0;
@@ -159,10 +160,13 @@ void uiCreate(void (*cb)(int),int brightness,void (*volume_cb)(int),int volume,v
  lv_obj_set_style_text_align(clock_seconds,LV_TEXT_ALIGN_LEFT,0);
  clockText("--:--");
  clock_date=label(clock_panel,"正在同步电脑时间",0,143,420,small,muted);lv_obj_add_flag(clock_panel,LV_OBJ_FLAG_HIDDEN);
- auto* div=box(home,47,296,386,1,0x28352e);lv_obj_clear_flag(div,LV_OBJ_FLAG_CLICKABLE);
- label(home,"剩余用量",90,303,146,small,muted);label(home,"可用重置",255,303,146,small,muted);
- quota=label(home,"--",75,335,175,&lv_font_montserrat_48);credits=label(home,"--",255,335,150,&lv_font_montserrat_48);
- reset=label(home,"额度恢复 待同步",30,392,420,small,muted);net=label(home,"Wi-Fi 未连接",35,427,410,small,muted);
+ quota_panel=box(home,0,296,480,131,0x050807);lv_obj_set_style_bg_opa(quota_panel,LV_OPA_TRANSP,0);lv_obj_clear_flag(quota_panel,LV_OBJ_FLAG_CLICKABLE);
+ auto* div=box(quota_panel,47,0,386,1,0x28352e);lv_obj_clear_flag(div,LV_OBJ_FLAG_CLICKABLE);
+ label(quota_panel,"剩余用量",90,7,146,small,muted);label(quota_panel,"可用重置",255,7,146,small,muted);
+ quota=label(quota_panel,"--",75,39,175,&lv_font_montserrat_48);credits=label(quota_panel,"--",255,39,150,&lv_font_montserrat_48);
+ reset=label(quota_panel,"额度恢复 待同步",30,96,420,small,muted);
+ short_quota=label(home,"",28,394,424,small,muted);lv_obj_add_flag(short_quota,LV_OBJ_FLAG_HIDDEN);
+ net=label(home,"Wi-Fi 未连接",35,427,410,small,muted);
  settings=box(root,0,0,480,480,0x050807);label(settings,"显示与声音",32,35,180,small);
  button(settings,"完成",358,25,82,[](lv_event_t*){lv_obj_add_flag(settings,LV_OBJ_FLAG_HIDDEN);});
  brightness_label=label(settings,"",32,89,416,small);
@@ -223,9 +227,24 @@ void uiUpdate(const LanState& s){
  text(title,t);text(detail,sub.c_str());text(symbol,icon);
  static uint32_t last_accent=0;
  if(accent!=last_accent){for(int i=0;i<8;++i){if(i<4)lv_obj_set_style_bg_color(border[i],lv_color_hex(accent),0);else lv_obj_set_style_arc_color(border[i],lv_color_hex(accent),0);}lv_obj_set_style_text_color(symbol,lv_color_hex(accent),0);last_accent=accent;}
+ const bool show_short=s.linked&&s.short_remaining>=0;
+ if(show_short!=!lv_obj_has_flag(short_quota,LV_OBJ_FLAG_HIDDEN)){
+  lv_obj_set_y(status_panel,show_short?64:90);lv_obj_set_y(clock_panel,show_short?64:90);
+  lv_obj_set_y(quota_panel,show_short?266:296);
+  if(show_short)lv_obj_clear_flag(short_quota,LV_OBJ_FLAG_HIDDEN);else lv_obj_add_flag(short_quota,LV_OBJ_FLAG_HIDDEN);
+ }
+ const uint32_t elapsed=(millis()-s.received)/1000;
+ if(show_short){
+  char buf[100];
+  if(s.short_reset_known){
+   const auto t=display_logic::shortResetTime(s.short_reset_seconds>elapsed?s.short_reset_seconds-elapsed:0);
+   snprintf(buf,sizeof(buf),"5小时剩余 %d%% · %lu小时%lu分后重置",s.short_remaining,(unsigned long)t.hours,(unsigned long)t.minutes);
+  }else snprintf(buf,sizeof(buf),"5小时剩余 %d%% · 恢复时间待同步",s.short_remaining);
+  text(short_quota,buf);
+ }
  if(s.linked&&s.metrics_valid){
   number(quota,"%d%%",s.remaining);if(s.credits_valid)number(credits,"%d",s.credits);else text(credits,"--");
-  uint32_t elapsed=(millis()-s.received)/1000,sec=s.reset_seconds>elapsed?s.reset_seconds-elapsed:0;
+  uint32_t sec=s.reset_seconds>elapsed?s.reset_seconds-elapsed:0;
   if(s.reset_seconds){const auto time=display_logic::resetTime(sec);char buf[80];snprintf(buf,sizeof(buf),"额度恢复 %lu天 %lu小时",(unsigned long)time.days,(unsigned long)time.hours);text(reset,buf);}else text(reset,"额度恢复时间待同步");
  }else{text(quota,"--");text(credits,"--");text(reset,"用量暂不可用");}
  text(net,s.linked?"局域网已连接":s.wifi?"Wi-Fi 已连接 · 电脑未连接":"Wi-Fi 未连接");

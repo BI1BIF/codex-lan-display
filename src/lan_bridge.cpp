@@ -105,7 +105,13 @@ void pollServer() {
         uint32_t now=doc["now"]|0UL, reset=doc["reset_at"]|0UL;
         if(now>=1700000000UL){local.unix_time=now;local.utc_offset=constrain(doc["utc_offset"]|0,-50400,50400);}
         local.reset_seconds=reset>now?reset-now:0;
-        local.metrics_valid=(doc["metrics_valid"]|false) && now-(doc["metrics_at"]|0UL)<120;
+        const bool fresh=now-(doc["metrics_at"]|0UL)<120;
+        local.metrics_valid=(doc["metrics_valid"]|false) && fresh;
+        const int short_remaining=doc["short_remaining"]|-1;
+        const uint32_t short_reset=doc["short_reset_at"]|0UL;
+        local.short_remaining=fresh && short_remaining>=0 && short_remaining<=100 ? short_remaining : -1;
+        local.short_reset_known=short_reset!=0;
+        local.short_reset_seconds=short_reset>now?short_reset-now:0;
         local.credits_valid=doc["credits_valid"]|false;
         local.tasks_valid=(doc["tasks_valid"]|false) && now-(doc["tasks_at"]|0UL)<30;
         const char* bitmap=doc["header_bitmap"]|"";

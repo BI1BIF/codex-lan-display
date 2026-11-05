@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import tempfile
 import threading
-from companion.codex_display.lan import records_state, aggregate, Rollouts, Store, handler
+from companion.codex_display.lan import records_state, aggregate, Rollouts, Store, handler, quota_metrics
 
 def event(kind, **kw):
     return {'type':'event_msg','payload':{'type':kind,**kw}}
@@ -47,6 +47,39 @@ class StatusTests(unittest.TestCase):
         self.assertEqual(aggregate(['unknown','idle'])[0],'idle')
         self.assertEqual(aggregate(['unknown'])[0],'unknown')
 
+def window(minutes, used, reset=None):
+    return {'windowDurationMins': minutes, 'usedPercent': used, 'resetsAt': reset}
+
+
+class QuotaTests(unittest.TestCase):
+    def test_weekly_and_five_hour_windows_in_either_order(self):
+        week = window(10080, 1, 1800000000)
+        short = window(300, 28, 1799500000)
+        for primary, secondary in ((short, week), (week, short)):
+            with self.subTest(primary=primary):
+                result = quota_metrics({
+                    'rateLimitsByLimitId': {'codex': {'primary': primary, 'secondary': secondary}},
+                    'rateLimitResetCredits': {'availableCount': 1},
+                })
+                self.assertEqual((result['remaining'], result['reset_at']), (99, 1800000000))
+                self.assertEqual((result['short_remaining'], result['short_reset_at']), (72, 1799500000))
+                self.assertTrue(result['metrics_valid'])
+                self.assertEqual(result['credits'], 1)
+
+    def test_week_only_and_legacy_replies_do_not_add_a_five_hour_row(self):
+        for duration in (10080, None):
+            with self.subTest(duration=duration):
+                result = quota_metrics({'rateLimits': {'primary': window(duration, 5), 'secondary': None}})
+                self.assertEqual(result['remaining'], 95)
+                self.assertEqual(result['short_remaining'], -1)
+
+    def test_short_only_is_not_mislabeled_as_weekly(self):
+        result = quota_metrics({'rateLimits': {'primary': window(300, 100)}})
+        self.assertFalse(result['metrics_valid'])
+        self.assertEqual(result['short_remaining'], 0)
+        self.assertEqual(result['short_reset_at'], 0)
+
+
 class SettingsTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -55,6 +88,20 @@ class SettingsTests(unittest.TestCase):
         self.server = ThreadingHTTPServer(('127.0.0.1', 0), handler(self.store))
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
+
+    def test_display_payload_clears_five_hour_row_when_window_disappears(self):
+        week = window(10080, 4)
+        self.store.update(**quota_metrics({'rateLimits': {'primary': week, 'secondary': window(300, 0, 1799500000)}}))
+        status, data = self.request('GET', '/api/display')
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(data)['short_remaining'], 100)
+        self.store.update(**quota_metrics({'rateLimits': {'primary': week}}))
+        _, data = self.request('GET', '/api/display')
+        payload = json.loads(data)
+        self.assertEqual(payload['v'], 2)
+        self.assertEqual(payload['remaining'], 96)
+        self.assertEqual(payload['short_remaining'], -1)
+        self.assertEqual(payload['short_reset_at'], 0)
 
     def tearDown(self):
         self.server.shutdown()

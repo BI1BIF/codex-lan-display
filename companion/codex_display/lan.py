@@ -137,6 +137,27 @@ def aggregate(states):
     return state, running, waiting
 
 
+def quota_metrics(result):
+    limits = (result.get('rateLimitsByLimitId') or {}).get('codex') or result.get('rateLimits') or {}
+    primary = limits.get('primary') or {}
+    windows = {w.get('windowDurationMins'): w for w in (primary, limits.get('secondary') or {}) if w}
+    # Older servers omit the duration. Keep the previous single-window behavior for those replies.
+    weekly = windows.get(10080) or (primary if primary.get('windowDurationMins') is None else {})
+    short = windows.get(300, {})
+
+    def remaining(window):
+        used = window.get('usedPercent')
+        return 100 - int(max(0, min(100, used))) if type(used) in (int, float) else -1
+
+    week_remaining = remaining(weekly)
+    credits = result.get('rateLimitResetCredits') or {}
+    return dict(remaining=max(0, week_remaining), metrics_valid=week_remaining >= 0,
+                reset_at=int(weekly.get('resetsAt') or 0),
+                short_remaining=remaining(short), short_reset_at=int(short.get('resetsAt') or 0),
+                credits=max(0, int(credits.get('availableCount', 0))),
+                credits_valid='availableCount' in credits, metrics_at=int(time.time()))
+
+
 class Store:
     def __init__(self, settings_path=None):
         self.lock = threading.Lock()
@@ -235,18 +256,10 @@ async def poll(store, codex):
                 if time.monotonic() >= next_metrics:
                     try:
                         result = await c.request('account/rateLimits/read')
-                        limits = (result.get('rateLimitsByLimitId') or {}).get('codex') or result.get('rateLimits') or {}
-                        primary = limits.get('primary') or {}
-                        summary = result.get('rateLimitResetCredits') or {}
-                        valid = isinstance(primary.get('usedPercent'), (int, float))
-                        store.update(remaining=max(0, min(100, 100-int(primary.get('usedPercent', 100)))),
-                                     credits=max(0, int(summary.get('availableCount', 0))),
-                                     credits_valid='availableCount' in summary,
-                                     reset_at=int(primary.get('resetsAt') or 0),
-                                     metrics_valid=valid, metrics_at=int(time.time()))
+                        store.update(**quota_metrics(result))
                         next_metrics = time.monotonic()+45
                     except Exception:
-                        store.update(metrics_valid=False)
+                        store.update(metrics_valid=False, short_remaining=-1)
                         next_metrics = time.monotonic()+10
                         logging.exception('Quota refresh failed')
                 threads = []

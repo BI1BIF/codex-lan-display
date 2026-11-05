@@ -26,6 +26,13 @@ static_assert(standbyOpacity(14999)==0&&standbyOpacity(15000)==0,"completion sta
 static_assert(standbyOpacity(15300)==127&&standbyOpacity(15600)==255,"standby fades in over 600 ms");
 struct ResetTime {uint32_t days,hours;};
 constexpr ResetTime resetTime(uint32_t seconds){return {seconds/86400,seconds/3600%24};}
+struct ShortResetTime {uint32_t hours,minutes;};
+constexpr ShortResetTime shortResetTime(uint32_t seconds){
+ const uint32_t minutes=seconds/60+(seconds%60!=0);
+ return {minutes/60,minutes%60};
+}
+static_assert(shortResetTime(8279).hours==2 && shortResetTime(8279).minutes==18,"5-hour reset rounds up to minutes");
+static_assert(shortResetTime(1).minutes==1 && shortResetTime(0).minutes==0,"last minute and reset");
 constexpr float absolute(float v){return v<0?-v:v;}
 constexpr int rotatedIndex(int x,int y,int w,int h,uint8_t rotation){
  return rotation==1?(w-1-x)*h+y:rotation==2?(h-1-y)*w+w-1-x:rotation==3?x*h+h-1-y:y*w+x;

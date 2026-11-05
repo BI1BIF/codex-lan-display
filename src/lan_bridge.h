@@ -5,7 +5,9 @@ struct LanState {
   bool wifi = false, linked = false, portal = false;
   bool metrics_valid = false, credits_valid = false, tasks_valid = false;
   int remaining = 0, credits = 0, running = 0, waiting = 0;
-  uint32_t received = 0, reset_seconds = 0;
+  int short_remaining = -1;
+  bool short_reset_known = false;
+  uint32_t received = 0, reset_seconds = 0, short_reset_seconds = 0;
   uint32_t unix_time = 0;
   int32_t utc_offset = 0;
   char state[16] = "unknown";
