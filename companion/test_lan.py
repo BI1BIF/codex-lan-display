@@ -6,7 +6,8 @@ import json
 from pathlib import Path
 import tempfile
 import threading
-from companion.codex_display.lan import records_state, aggregate, Rollouts, Store, handler, quota_metrics
+import time
+from companion.codex_display.lan import records_state, aggregate, Rollouts, Store, handler, quota_metrics, task_states
 
 def event(kind, **kw):
     return {'type':'event_msg','payload':{'type':kind,**kw}}
@@ -39,6 +40,29 @@ class StatusTests(unittest.TestCase):
             with path.open('ab') as f:
                 f.write(line(event('task_complete')))
             self.assertEqual(rollouts.state(path), 'done')
+
+    def test_parallel_tasks_include_recent_unindexed_session_and_dedupe_aliases(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            def rollout(name, thread_id, source='vscode'):
+                path = root / name
+                rows = [{'type':'session_meta','payload':{'id':thread_id,'source':source}}, event('task_started')]
+                path.write_text(''.join(json.dumps(row)+'\n' for row in rows), encoding='utf8')
+                return path
+
+            first = rollout('first.jsonl', 'first')
+            duplicate = rollout('alias.jsonl', 'first')
+            second = rollout('second.jsonl', 'second')
+            child = rollout('child.jsonl', 'child', {'subagent': 'thread_spawn'})
+            index = [{'id': 'first', 'path': str(root/'missing.jsonl'), 'status': {'type': 'notLoaded'}}]
+            candidates = [first, duplicate, second, child]
+            cache = Rollouts()
+            self.assertEqual(aggregate(list(task_states(index, cache, candidates, time.time()))),
+                             ('running', 2, 0))
+            with second.open('a', encoding='utf8') as output:
+                output.write(json.dumps(event('task_complete'))+'\n')
+            self.assertEqual(aggregate(list(task_states(index, cache, candidates, time.time()))),
+                             ('running', 1, 0))
 
     def test_priority(self):
         self.assertEqual(aggregate(['done','running','waiting']),('waiting',1,1))

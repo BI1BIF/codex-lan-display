@@ -11,7 +11,7 @@ from pathlib import Path
 import socket
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from .app_server import AppServerClient
 from .display_settings import DisplaySettings
@@ -137,6 +137,55 @@ def aggregate(states):
     return state, running, waiting
 
 
+def recent_rollouts(root, now):
+    # shortcut: scan today and yesterday for sessions missing from the index.
+    # Older sessions are already tracked through thread/list.
+    for day in (now, now - timedelta(days=1)):
+        yield from (root / day.strftime('%Y/%m/%d')).glob('rollout-*.jsonl')
+
+
+def task_states(threads, rollouts, local_paths, now):
+    by_id = {thread['id']: thread for thread in threads if thread.get('id')}
+    for path in local_paths:
+        try:
+            mtime = path.stat().st_mtime
+            if now - mtime > 1800:
+                continue
+            with path.open('rb') as source:
+                header = json.loads(source.readline(65536))
+            meta = header.get('payload') or {}
+            if header.get('type') != 'session_meta' or not isinstance(meta, dict):
+                continue
+            thread_id = meta.get('id')
+            origin = meta.get('source')
+            if not isinstance(thread_id, str) or not thread_id or (
+                isinstance(origin, dict) and 'subagent' in origin
+            ):
+                continue
+            indexed = by_id.get(thread_id, {})
+            indexed_path = indexed.get('path')
+            if indexed_path:
+                try:
+                    if os.path.getmtime(indexed_path) >= mtime:
+                        continue
+                except OSError:
+                    pass
+            by_id[thread_id] = dict(indexed, path=str(path))
+        except (OSError, ValueError, AttributeError):
+            continue
+
+    for thread in by_id.values():
+        status = thread.get('status') or {}
+        flags = status.get('activeFlags') or []
+        if any(flag in flags for flag in ('waitingOnUserInput', 'waitingOnApproval')):
+            yield 'waiting'
+        elif status.get('type') == 'active':
+            yield 'running'
+        else:
+            state = rollouts.state(thread.get('path') or '')
+            yield 'idle' if state == 'unknown' and status.get('type') == 'idle' else state
+
+
 def quota_metrics(result):
     limits = (result.get('rateLimitsByLimitId') or {}).get('codex') or result.get('rateLimits') or {}
     primary = limits.get('primary') or {}
@@ -247,6 +296,7 @@ def handler(store):
 
 async def poll(store, codex):
     rollouts = Rollouts()
+    session_root = Path(os.environ.get('CODEX_HOME') or Path.home() / '.codex') / 'sessions'
     while True:
         c = AppServerClient(codex)
         try:
@@ -273,19 +323,8 @@ async def poll(store, codex):
                     cursor = result.get('nextCursor')
                     if not cursor:
                         break
-                states = []
-                for thread in threads:
-                    status = thread.get('status') or {}
-                    flags = status.get('activeFlags') or []
-                    if any(x in flags for x in ('waitingOnUserInput', 'waitingOnApproval')):
-                        state = 'waiting'
-                    elif status.get('type') == 'active':
-                        state = 'running'
-                    else:
-                        state = rollouts.state(thread.get('path', ''))
-                        if state == 'unknown' and status.get('type') == 'idle':
-                            state = 'idle'
-                    states.append(state)
+                now = datetime.now()
+                states = list(task_states(threads, rollouts, recent_rollouts(session_root, now), now.timestamp()))
                 state, running, waiting = aggregate(states)
                 previous = store.get()
                 store.update(state=state, running=running, waiting=waiting,

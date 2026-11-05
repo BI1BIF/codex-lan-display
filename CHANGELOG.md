@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.3
+
+- Include recent local Codex sessions missing from the task index and deduplicate by conversation ID when counting concurrent tasks.
+- The firmware is unchanged from 0.1.2.
+
 ## 0.1.2
 
 - Show the five-hour allowance and its hours/minutes reset countdown when Codex reports that window.
