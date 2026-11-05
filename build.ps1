@@ -15,6 +15,12 @@ Copy-Item -LiteralPath "$PSScriptRoot/src" -Destination $Stage -Recurse -Force
 Copy-Item -LiteralPath "$PSScriptRoot/lv_conf.h","$PSScriptRoot/partitions.csv" -Destination $Stage -Force
 Set-Content -LiteralPath "$Stage/codex-lan-sketch.ino" -Value '// setup and loop are in src/main.cpp' -Encoding ascii
 $Flags = '-I"' + $Stage.Replace('\','/') + '" -DLV_CONF_INCLUDE_SIMPLE -DLV_LVGL_H_INCLUDE_SIMPLE'
+# Keep source paths emitted by assertions and diagnostics portable.
+foreach ($Prefix in @($Stage, $ArduinoData, $env:USERPROFILE)) {
+    foreach ($PathForm in @($Prefix.Replace('\','/'), $Prefix.Replace('/','\'))) {
+        $Flags += ' "-ffile-prefix-map=' + $PathForm + '=/build"'
+    }
+}
 $Fqbn = 'esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,FlashSize=16M,PSRAM=opi,PartitionScheme=app3M_fat9M_16MB'
 & $ArduinoCli compile --fqbn $Fqbn --build-path $Output --build-property "compiler.c.extra_flags=$Flags" --build-property "compiler.cpp.extra_flags=$Flags" $Stage
 if ($LASTEXITCODE) { throw 'Firmware build failed.' }

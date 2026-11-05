@@ -16,7 +16,9 @@ import webbrowser
 from PIL import Image, ImageDraw
 import pystray
 
-ROOT = Path(__file__).resolve().parents[2]
+FROZEN = getattr(sys, 'frozen', False)
+ROOT = (Path(os.environ['LOCALAPPDATA']) / 'CodexLanDisplay' if FROZEN
+        else Path(__file__).resolve().parents[2])
 HIDDEN = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
 COLORS = {'running': '#51a9ff', 'waiting': '#ffce61', 'done': '#62d7a0',
           'idle': '#f5f8f6', 'offline': '#7f9c8b', 'error': '#ff6b6b'}
@@ -86,8 +88,9 @@ class Companion:
             webbrowser.open(f'http://{self.device_ip}/')
 
     def quit(self, icon=None, item=None):
-        subprocess.run(['schtasks.exe', '/Change', '/TN', 'Codex LAN Display', '/Disable'],
-                       capture_output=True, timeout=15, creationflags=HIDDEN, check=True)
+        if not FROZEN:
+            subprocess.run(['schtasks.exe', '/Change', '/TN', 'Codex LAN Display', '/Disable'],
+                           capture_output=True, timeout=15, creationflags=HIDDEN, check=True)
         self.stopped.set()
         self.icon.stop()
 
@@ -114,10 +117,12 @@ class Companion:
                         self.restart.clear()
                         self.stop_worker()
                     if self.process is None or self.process.poll() is not None:
+                        command = ([sys.executable, '--worker'] if FROZEN else [
+                            str(Path(sys.executable).with_name('python.exe')), '-m', 'companion.codex_display.lan'
+                        ])
                         with (ROOT / 'lan-worker.log').open('ab') as output:
                             self.process = subprocess.Popen([
-                                str(Path(sys.executable).with_name('python.exe')), '-m',
-                                'companion.codex_display.lan', '--codex-bin', codex_binary(), '--address', current_address
+                                *command, '--codex-bin', codex_binary(), '--address', current_address
                             ], cwd=ROOT, stdin=subprocess.DEVNULL, stdout=output, stderr=output,
                                creationflags=HIDDEN, env=dict(os.environ, PYTHONUTF8='1'))
                         worker_address = current_address
@@ -164,6 +169,7 @@ class Companion:
 
 
 def main():
+    ROOT.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s',
                         handlers=[RotatingFileHandler(ROOT / 'lan-tray.log', maxBytes=1024*1024,
                                                       backupCount=2, encoding='utf8')])
@@ -178,10 +184,12 @@ def main():
         return
     try:
         # A killed tray can leave its detached worker alive; replace only this project's worker.
-        script = "$root = '" + str(ROOT).replace("'", "''") + "'; " + (
+        executable = sys.executable if FROZEN else str(ROOT / 'companion/.venv/Scripts/python.exe')
+        marker = r'--worker(?:\s|$)' if FROZEN else r'-m companion\.codex_display\.lan(?:\s|$)'
+        script = "$exe = '" + executable.replace("'", "''") + "'; " + (
             "$workers = @(Get-CimInstance Win32_Process | Where-Object {"
-            "$_.ExecutablePath -eq ($root + '\\companion\\.venv\\Scripts\\python.exe') -and "
-            "$_.CommandLine -match '-m companion\\.codex_display\\.lan(?:\\s|$)'}); "
+            "$_.ExecutablePath -eq $exe -and "
+            f"$_.CommandLine -match '{marker}'" + "}); "
             "foreach ($worker in $workers) {taskkill.exe /PID $worker.ProcessId /T /F | Out-Null}")
         subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script],
                        capture_output=True, timeout=20, creationflags=HIDDEN, check=True)

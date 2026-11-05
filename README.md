@@ -4,11 +4,34 @@
 
 把 Codex 的任务状态和用量放到桌面小屏上。支持 **Windows + Waveshare ESP32-S3-Touch-AMOLED-2.16（480 × 480，16 MB Flash）**。小屏通过 Wi-Fi 从电脑读取数据，无需蓝牙或 API Key。
 
+[下载 Windows x64 桌面端](https://github.com/BI1BIF/codex-lan-display/releases/latest/download/Codex-LAN-Display-Windows-x64.exe) · [下载小屏固件 BIN](https://github.com/BI1BIF/codex-lan-display/releases/latest/download/Codex-LAN-Display-Waveshare-AMOLED-2.16.bin) · [查看版本与 SHA-256](https://github.com/BI1BIF/codex-lan-display/releases/latest)
+
+| 运行中 | 等待回答 |
+| :---: | :---: |
+| <img src="docs/screens/running.png" width="200" alt="运行中"> | <img src="docs/screens/waiting.png" width="200" alt="等待回答"> |
+
+| 任务完成 | 待机时钟 |
+| :---: | :---: |
+| <img src="docs/screens/done.png" width="200" alt="任务完成"> | <img src="docs/screens/standby.png" width="200" alt="待机时钟"> |
+
 - 运行时蓝色渐变光环，等待回答时黄色呼吸，完成后绿色提示。
 - 完成或空闲 15 秒后进入七段数码时钟，白色光环每分钟一圈。
 - 显示剩余额度、可用重置次数和恢复倒计时；支持自定义左上角文字。
 - 支持四方向自动旋转、电池电量与充电提示。长按屏幕调节亮度与提示音音量。
 - Windows 托盘在登录后启动，异常退出后由计划任务拉起。
+
+## 快速安装
+
+1. 在 Codex 桌面应用登录，双击 EXE。程序会出现在 Windows 托盘里，无需安装 Python。需要登录时启动，可把 EXE 的快捷方式放到 `shell:startup`。
+2. 确认板型是 **Waveshare ESP32-S3-Touch-AMOLED-2.16（16 MB Flash）**，查出串口后刷入合并镜像。下面用 `COM7` 举例。**合并镜像会覆盖原分区和设备设置，刷入后需要重新配网。** 要保留同版分区布局中的设置，请使用下方的分段刷写方法。
+3. 按[连接小屏](#3-连接小屏)完成配网。电脑和小屏需在可互通的局域网内。
+
+```powershell
+python -m pip install esptool==5.2.0
+python -m esptool --chip esp32s3 --port COM7 --baud 460800 write-flash 0x0 Codex-LAN-Display-Waveshare-AMOLED-2.16.bin
+```
+
+## 从源码安装
 
 ## 1. 编译和刷入
 
@@ -41,6 +64,13 @@
 手机扫码加入小屏显示的配置热点，打开 http://192.168.4.1/，填写与电脑互通的 2.4 GHz Wi-Fi。电脑地址可留空使用 mDNS；发现失败时填写电脑在该 Wi-Fi 上的 IPv4 地址。更换网络时，长按小屏进入设置并选择重新配网。
 
 电脑设置页为 http://127.0.0.1:8738/settings。连接失败时检查 Windows 防火墙是否允许可信专用网络访问 TCP 8738，以及路由器是否隔离无线客户端。
+
+### 重新打包桌面端
+
+在已安装后台依赖的虚拟环境里安装 PyInstaller，然后运行打包脚本：
+
+    .\companion\.venv\Scripts\python.exe -m pip install pyinstaller==6.19.0
+    .\package-windows.ps1
 
 ## 数据与边界
 

@@ -288,17 +288,18 @@ async def poll(store, codex):
         await asyncio.sleep(5)
 
 
-def main():
+def main(data_dir=None):
+    data_dir = data_dir or Path(__file__).resolve().parents[2]
     p = argparse.ArgumentParser()
     p.add_argument('--codex-bin', required=True)
     p.add_argument('--address', required=True)
     p.add_argument('--port', type=int, default=8738)
     args = p.parse_args()
-    log = Path(__file__).resolve().parents[2]/'lan-companion.log'
+    log = data_dir / 'lan-companion.log'
     logging.basicConfig(level=logging.INFO,format='%(asctime)s %(levelname)s %(message)s',
                         handlers=[RotatingFileHandler(log,maxBytes=1024*1024,backupCount=2,encoding='utf-8')])
     from zeroconf import Zeroconf, ServiceInfo
-    store = Store(Path(__file__).resolve().parents[2]/'display-settings.json')
+    store = Store(data_dir / 'display-settings.json')
     server = ThreadingHTTPServer(('0.0.0.0',args.port),handler(store))
     server.daemon_threads = True
     threading.Thread(target=server.serve_forever,daemon=True).start()
