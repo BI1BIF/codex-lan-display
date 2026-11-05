@@ -1,0 +1,4 @@
+# Local mDNS discovery and antialiased custom screen labels.
+zeroconf==0.150.0
+Pillow==13.0.0
+pystray==0.19.5; sys_platform == 'win32'

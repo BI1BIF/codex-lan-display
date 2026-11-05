@@ -1,0 +1,13 @@
+companion/.venv/
+__pycache__/
+*.pyc
+*.log
+*.bin
+*.elf
+*.map
+*.zip
+local-backup/
+qa-artifacts/
+display-settings.json
+display-settings.tmp
+.env

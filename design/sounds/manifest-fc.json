@@ -1,0 +1,45 @@
+{
+  "palettes": {
+    "E2": {
+      "name": "\u7ea2\u767d\u673a\u539f\u5473 \u00b7 \u5feb\u8282\u594f",
+      "sounds": [
+        {
+          "file": "E2-running.wav",
+          "seconds": 1.5,
+          "peak_dbfs": -9.37,
+          "rms_dbfs": -25.74,
+          "dc_offset": 0.0001111,
+          "clipped_samples": 0,
+          "sha256": "04f7a035f67c2cbebc1cc04adf4d028f01ddb7ed6dce9747673db0e3fdc288f1"
+        },
+        {
+          "file": "E2-question.wav",
+          "seconds": 1.5,
+          "peak_dbfs": -9.37,
+          "rms_dbfs": -27.74,
+          "dc_offset": 9.06e-05,
+          "clipped_samples": 0,
+          "sha256": "8da0c13a9749a72789d0a19879d8f310ccdd254c417a8d73baee267a3ab05fd0"
+        },
+        {
+          "file": "E2-done.wav",
+          "seconds": 1.5,
+          "peak_dbfs": -9.37,
+          "rms_dbfs": -24.25,
+          "dc_offset": 0.0001956,
+          "clipped_samples": 0,
+          "sha256": "2e767d32842faa128768608765bd4e1258dff8be643bcf69e71fed6de377fb36"
+        }
+      ],
+      "preview": {
+        "file": "E2-preview.wav",
+        "seconds": 8.2,
+        "peak_dbfs": -9.37,
+        "rms_dbfs": -28.29,
+        "dc_offset": 7.27e-05,
+        "clipped_samples": 0,
+        "sha256": "67103ebfc0d34d3b8be77c7805b4721b7cf738c8d856de00e59d66f356e644ee"
+      }
+    }
+  }
+}
