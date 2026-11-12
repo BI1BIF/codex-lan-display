@@ -84,21 +84,48 @@ void flush(lv_disp_drv_t* drv,const lv_area_t* area,lv_color_t* pixels){
  display->draw16bitRGBBitmap(x,y,reinterpret_cast<uint16_t*>(pixels),w,h);lv_disp_flush_ready(drv);
 }
 void roundArea(lv_disp_drv_t*,lv_area_t* a){a->x1&=~1;a->y1&=~1;a->x2|=1;a->y2|=1;}
+uint32_t last_screen_activity=0;
+bool battery_only=false, auto_blanked=false;
+void setScreen(bool on,bool automatic=false){
+ auto_blanked=!on&&automatic;
+ if(on)last_screen_activity=millis();
+ if(on==screen_on)return;
+ screen_on=on;
+ if(on){display->displayOn();display->setBrightness(brightness*255/100);lv_obj_invalidate(lv_scr_act());}
+ else{display->setBrightness(0);display->displayOff();}
+}
+void screenPower(uint32_t now){
+ static uint32_t last_poll=0;
+ if(!power_ready||now-last_poll<100)return;
+ last_poll=now;
+ const bool on_battery=power.isBatteryConnect()&&!power.isVbusGood()&&power.isDischarge();
+ if(on_battery!=battery_only){
+  battery_only=on_battery;last_screen_activity=now;
+  if(!on_battery&&auto_blanked)setScreen(true);
+ }
+ if(power.getIrqStatus()){
+  const bool pressed=power.isPekeyShortPressIrq();
+  power.clearIrqStatus();
+  if(pressed){setScreen(true);return;}
+ }
+ if(screen_on&&touch_pressed)last_screen_activity=now;
+ if(screen_on&&display_logic::batteryScreenTimeout(battery_only,now,last_screen_activity))setScreen(false,true);
+}
 void readTouch(lv_indev_drv_t*,lv_indev_data_t* data){
  if(usbQaTouch(data))return;
  static int16_t x[2]={},y[2]={};
  if(touch_ready&&touch_pending){
   noInterrupts();touch_pending=false;interrupts();
   touch_pressed=touch.getPoint(x,y,2)>0;
-  if(touch_pressed&&!screen_on){screen_on=true;display->displayOn();display->setBrightness(brightness*255/100);}
+  if(touch_pressed&&!screen_on&&!auto_blanked)setScreen(true);
  }
- data->state=touch_pressed?LV_INDEV_STATE_PR:LV_INDEV_STATE_REL;data->point.x=x[0];data->point.y=y[0];
+ data->state=screen_on&&touch_pressed?LV_INDEV_STATE_PR:LV_INDEV_STATE_REL;data->point.x=x[0];data->point.y=y[0];
 }
 void buttons(){
  bool boot=digitalRead(board::kBootButton)==LOW,key=digitalRead(board::kCodexButton)==LOW;
  if(boot&&!boot_down)boot_pressed=millis();
- if(!boot&&boot_down&&millis()-boot_pressed>35){screen_on=!screen_on;if(screen_on){display->displayOn();display->setBrightness(brightness*255/100);}else{display->setBrightness(0);display->displayOff();}}
- if(key&&!key_down){if(!screen_on){screen_on=true;display->displayOn();display->setBrightness(brightness*255/100);}uiSettings();}
+ if(!boot&&boot_down&&millis()-boot_pressed>35)setScreen(!screen_on);
+ if(key&&!key_down){setScreen(true);uiSettings();}
  boot_down=boot;key_down=key;
 }
 }
@@ -126,6 +153,7 @@ void setup(){
  Serial.printf("[audio] ready=%d volume=%d%% E2 notes=2/2/4\n",soundBegin(saved_volume),saved_volume);
  power_ready=power.begin(Wire,AXP2101_SLAVE_ADDRESS,board::kI2cSda,board::kI2cScl);
  if(power_ready){
+  power.clearIrqStatus();power.enableIRQ(XPOWERS_AXP2101_PKEY_SHORT_IRQ);
   power.setPowerKeyPressOnTime(XPOWERS_POWERON_128MS);power.setPowerKeyPressOffTime(XPOWERS_POWEROFF_6S);power.enableLongPressShutdown();power.setLongPressPowerOFF();power.enableBattDetection();power.enableBattVoltageMeasure();
   // Waveshare's 2.16-inch board example: stock battery, 400 mA CC, 4.2 V CV, 25 mA termination.
   power.setPrechargeCurr(XPOWERS_AXP2101_PRECHARGE_50MA);
@@ -160,10 +188,10 @@ void setup(){
 void loop(){
  static bool was_qa=false;static int before_qa=0,before_qa_volume=0;
  usbQaPoll();bool qa=usbQaActive();
- if(qa&&!was_qa){before_qa=brightness;before_qa_volume=soundVolume();soundReset();}
+ if(qa&&!was_qa){setScreen(true);before_qa=brightness;before_qa_volume=soundVolume();soundReset();}
  if(!qa&&was_qa){setBrightness(before_qa);uiBrightness(before_qa);setVolume(before_qa_volume);uiVolume(before_qa_volume);soundReset();}
  was_qa=qa;
- if(!qa)buttons();lv_timer_handler();uint32_t now=millis();
+ if(!qa){buttons();screenPower(millis());}lv_timer_handler();uint32_t now=millis();
  orientation(now);
  static uint32_t last_perf=0;
  if(now-last_perf>=15000){Serial.printf("[display] fps=%.1f render_avg_ms=%.1f render_max_ms=%u heap=%u\n",rendered_frames*1000.0f/(now-last_perf),rendered_frames?float(render_ms)/rendered_frames:0,max_render_ms,ESP.getFreeHeap());last_perf=now;rendered_frames=render_ms=max_render_ms=0;}

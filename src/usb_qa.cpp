@@ -65,12 +65,13 @@ void command(const char* line){
   if(strcmp(state,"running")&&strcmp(state,"waiting")&&strcmp(state,"done")&&strcmp(state,"idle")&&strcmp(state,"error")&&strcmp(state,"offline")){Serial.println("@ERROR audio-state");return;}
   LanState scene;scene.wifi=scene.linked=scene.tasks_valid=strcmp(state,"offline")!=0;strlcpy(scene.state,state,sizeof(scene.state));soundUpdate(scene);Serial.println("@OK AUDIO");return;
  }
- if(sscanf(line,"QA SCENE %15s %d %d %d",state,&percent,&charging,&present)==4 && percent>=-1 && percent<=100 && (charging==0 || charging==1) && (present==0 || present==1)){
+ unsigned reset_seconds=6*86400+23*3600;
+ if(sscanf(line,"QA SCENE %15s %d %d %d %u",state,&percent,&charging,&present,&reset_seconds)>=4 && percent>=-1 && percent<=100 && (charging==0 || charging==1) && (present==0 || present==1)){
   if(strcmp(state,"running")&&strcmp(state,"waiting")&&strcmp(state,"done")&&strcmp(state,"idle")&&strcmp(state,"error")&&strcmp(state,"offline")&&strcmp(state,"syncing")&&strcmp(state,"setup")){Serial.println("@ERROR state");return;}
   LanState scene;scene.wifi=scene.linked=scene.metrics_valid=scene.credits_valid=scene.tasks_valid=true;
   scene.utc_offset=28800;
   scene.remaining=99;scene.credits=1;scene.running=!strcmp(state,"running");scene.waiting=!strcmp(state,"waiting");
-  scene.reset_seconds=6*86400+23*3600;scene.received=millis();strlcpy(scene.state,state,sizeof(scene.state));
+  scene.reset_seconds=reset_seconds;scene.received=millis();strlcpy(scene.state,state,sizeof(scene.state));
   if(!strcmp(state,"offline"))scene.linked=false;
   if(!strcmp(state,"syncing"))scene.tasks_valid=false;
   if(!strcmp(state,"setup")){scene.wifi=scene.linked=false;scene.portal=true;strlcpy(scene.ap,"Codex-Setup-TEST",sizeof(scene.ap));strlcpy(scene.password,"000000000000",sizeof(scene.password));}

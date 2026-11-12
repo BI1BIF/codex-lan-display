@@ -2,6 +2,11 @@
 #include <stdint.h>
 
 namespace display_logic {
+constexpr bool batteryScreenTimeout(bool battery_only,uint32_t now,uint32_t last_activity){
+ return battery_only && uint32_t(now-last_activity)>=60000;
+}
+static_assert(!batteryScreenTimeout(true,59999,0) && batteryScreenTimeout(true,60000,0),"one minute on battery");
+static_assert(!batteryScreenTimeout(false,120000,0),"external power keeps the screen awake");
 struct ClockRing {
  bool active=false;uint32_t started=0,origin=0;
  constexpr uint32_t phase(uint32_t now,uint32_t wall_phase){
@@ -24,8 +29,8 @@ constexpr uint8_t standbyOpacity(uint32_t elapsed){
 }
 static_assert(standbyOpacity(14999)==0&&standbyOpacity(15000)==0,"completion stays visible for 15 seconds");
 static_assert(standbyOpacity(15300)==127&&standbyOpacity(15600)==255,"standby fades in over 600 ms");
-struct ResetTime {uint32_t days,hours;};
-constexpr ResetTime resetTime(uint32_t seconds){return {seconds/86400,seconds/3600%24};}
+struct ResetTime {uint32_t days,hours,minutes;};
+constexpr ResetTime resetTime(uint32_t seconds){return {seconds/86400,seconds/3600%24,seconds/60%60};}
 struct ShortResetTime {uint32_t hours,minutes;};
 constexpr ShortResetTime shortResetTime(uint32_t seconds){
  const uint32_t minutes=seconds/60+(seconds%60!=0);
@@ -44,8 +49,8 @@ constexpr uint8_t orientation(float x,float y,float z,uint8_t current){
  return ax>ay?(x>0?3:1):(y>0?0:2);
 }
 static_assert(resetTime(90061).days==1 && resetTime(90061).hours==1,"day/hour rollover");
-static_assert(resetTime(86399).days==0 && resetTime(86399).hours==23,"before day rollover");
-static_assert(resetTime(0).days==0 && resetTime(86400).hours==0,"zero and exact day");
+static_assert(resetTime(86399).days==0 && resetTime(86399).hours==23 && resetTime(86399).minutes==59,"before day rollover");
+static_assert(resetTime(0).minutes==0 && resetTime(86400).days==1 && resetTime(86400).hours==0 && resetTime(86400).minutes==0,"zero and exact day");
 static_assert(orientation(0,1,0,2)==0 && orientation(-1,0,0,0)==1,"upright and landscape");
 static_assert(orientation(0,-1,0,0)==2 && orientation(1,0,0,0)==3,"inverted directions");
 static_assert(orientation(0,0,1,2)==2 && orientation(.6f,.6f,0,3)==3,"flat/diagonal hold");

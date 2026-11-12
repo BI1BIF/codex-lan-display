@@ -245,7 +245,13 @@ void uiUpdate(const LanState& s){
  if(s.linked&&s.metrics_valid){
   number(quota,"%d%%",s.remaining);if(s.credits_valid)number(credits,"%d",s.credits);else text(credits,"--");
   uint32_t sec=s.reset_seconds>elapsed?s.reset_seconds-elapsed:0;
-  if(s.reset_seconds){const auto time=display_logic::resetTime(sec);char buf[80];snprintf(buf,sizeof(buf),"额度恢复 %lu天 %lu小时",(unsigned long)time.days,(unsigned long)time.hours);text(reset,buf);}else text(reset,"额度恢复时间待同步");
+  if(s.reset_seconds){
+   const auto time=display_logic::resetTime(sec);char buf[80];
+   if(time.days)snprintf(buf,sizeof(buf),"额度恢复 %lu天 %lu小时",(unsigned long)time.days,(unsigned long)time.hours);
+   else if(sec>0&&sec<60)snprintf(buf,sizeof(buf),"额度恢复 不到1分");
+   else snprintf(buf,sizeof(buf),"额度恢复 %lu小时 %lu分",(unsigned long)time.hours,(unsigned long)time.minutes);
+   text(reset,buf);
+  }else text(reset,"额度恢复时间待同步");
  }else{text(quota,"--");text(credits,"--");text(reset,"用量暂不可用");}
  text(net,s.linked?"局域网已连接":s.wifi?"Wi-Fi 已连接 · 电脑未连接":"Wi-Fi 未连接");
  pulse(nullptr);

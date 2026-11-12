@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.4
+
+- Ignore interrupted turns from a previous writer when reopening an old Codex chat, while continuing to count quiet turns whose original writer still holds the lock.
+- Turn the screen off after 60 seconds without interaction on battery power. A short press of the power button or reconnecting USB wakes the screen. Wi-Fi and sound alerts remain active.
+- Show hours and minutes when the weekly reset is less than 24 hours away, and days and hours otherwise.
+
 ## 0.1.3
 
 - Include recent local Codex sessions missing from the task index and deduplicate by conversation ID when counting concurrent tasks.

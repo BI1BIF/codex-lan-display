@@ -12,13 +12,14 @@ import socket
 import threading
 import time
 from datetime import datetime, timedelta
+from uuid import UUID
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from .app_server import AppServerClient
 from .display_settings import DisplaySettings
 
 
 def records_state(records, checkpoint=None):
-    state, pending = checkpoint if checkpoint is not None else ('unknown', {})
+    state, pending, started = checkpoint if checkpoint is not None else ('unknown', {}, 0)
     for record in records:
         p = record.get('payload') or {}
         if not isinstance(p, dict):
@@ -27,6 +28,12 @@ def records_state(records, checkpoint=None):
         if record.get('type') == 'event_msg':
             if kind == 'task_started':
                 state, pending = 'running', {}
+                started = p.get('started_at')
+                if type(started) not in (int, float) or not started > 0:
+                    try:
+                        started = datetime.fromisoformat(record.get('timestamp') or '').timestamp()
+                    except (ValueError, TypeError, OSError, OverflowError):
+                        started = 0
             elif kind in ('task_complete', 'turn_aborted'):
                 state = 'error' if p.get('error') else ('idle' if kind == 'turn_aborted' else 'done')
                 pending = {}
@@ -52,7 +59,7 @@ def records_state(records, checkpoint=None):
             if pending.get(key) != 'async_question':
                 pending.pop(key, None)
     if checkpoint is not None:
-        checkpoint[:] = [state, pending]
+        checkpoint[:] = [state, pending, started]
     return 'waiting' if pending else state
 
 
@@ -83,24 +90,40 @@ def rollout_start(f, size):
     return 0
 
 
+def writer_lock_since(path):
+    # Windows rejects a read of the byte range held by the Codex writer.
+    # Opening a lock file alone does not prove an active writer.
+    if os.name != 'nt' or path is None:
+        return 0
+    try:
+        with path.open('rb', buffering=0) as lock:
+            try:
+                lock.read(1)
+            except PermissionError:
+                return os.fstat(lock.fileno()).st_mtime
+    except OSError:
+        pass
+    return 0
+
+
 class Rollouts:
     def __init__(self):
         self.cache = {}
 
-    def state(self, path):
+    def state(self, path, writer_lock=None):
         try:
             with open(path, 'rb') as f:
                 stat = os.fstat(f.fileno())
                 key = (stat.st_size, stat.st_mtime_ns)
                 old = self.cache.get(path)
                 if old and old[0] == key:
-                    state = old[4]
+                    state, checkpoint = old[4], old[3]
                 else:
                     if old and old[1] == stat.st_ino and stat.st_size > old[0][0]:
                         offset, checkpoint = old[2], old[3]
                     else:
                         offset = rollout_start(f, stat.st_size)
-                        checkpoint = ['unknown', {}]
+                        checkpoint = ['unknown', {}, 0]
                     f.seek(offset)
 
                     def records():
@@ -116,9 +139,14 @@ class Rollouts:
 
                     state = records_state(records(), checkpoint)
                     self.cache[path] = (key, stat.st_ino, offset, checkpoint, state)
-            # Preserve the existing stale-session guard.
-            if state in ('running', 'waiting') and time.time()-stat.st_mtime > 1800:
-                return 'unknown'
+            if state in ('running', 'waiting'):
+                started = checkpoint[2]
+                locked_since = writer_lock_since(writer_lock)
+                # Reopening an old chat can create a new lock without starting a turn.
+                if started and locked_since > started + 2:
+                    return 'idle'
+                if time.time()-stat.st_mtime > 1800 and not (started and locked_since):
+                    return 'unknown'
             return state
         except OSError:
             return 'unknown'
@@ -144,7 +172,7 @@ def recent_rollouts(root, now):
         yield from (root / day.strftime('%Y/%m/%d')).glob('rollout-*.jsonl')
 
 
-def task_states(threads, rollouts, local_paths, now):
+def task_states(threads, rollouts, local_paths, now, lock_root=None):
     by_id = {thread['id']: thread for thread in threads if thread.get('id')}
     for path in local_paths:
         try:
@@ -174,7 +202,7 @@ def task_states(threads, rollouts, local_paths, now):
         except (OSError, ValueError, AttributeError):
             continue
 
-    for thread in by_id.values():
+    for thread_id, thread in by_id.items():
         status = thread.get('status') or {}
         flags = status.get('activeFlags') or []
         if any(flag in flags for flag in ('waitingOnUserInput', 'waitingOnApproval')):
@@ -182,7 +210,13 @@ def task_states(threads, rollouts, local_paths, now):
         elif status.get('type') == 'active':
             yield 'running'
         else:
-            state = rollouts.state(thread.get('path') or '')
+            lock_path = None
+            if lock_root is not None:
+                try:
+                    lock_path = lock_root / f'{UUID(thread_id)}.lock'
+                except (ValueError, TypeError, AttributeError):
+                    pass
+            state = rollouts.state(thread.get('path') or '', lock_path)
             yield 'idle' if state == 'unknown' and status.get('type') == 'idle' else state
 
 
@@ -296,7 +330,9 @@ def handler(store):
 
 async def poll(store, codex):
     rollouts = Rollouts()
-    session_root = Path(os.environ.get('CODEX_HOME') or Path.home() / '.codex') / 'sessions'
+    codex_home = Path(os.environ.get('CODEX_HOME') or Path.home() / '.codex')
+    session_root = codex_home / 'sessions'
+    lock_root = codex_home / 'thread-writer-locks'
     while True:
         c = AppServerClient(codex)
         try:
@@ -324,7 +360,7 @@ async def poll(store, codex):
                     if not cursor:
                         break
                 now = datetime.now()
-                states = list(task_states(threads, rollouts, recent_rollouts(session_root, now), now.timestamp()))
+                states = list(task_states(threads, rollouts, recent_rollouts(session_root, now), now.timestamp(), lock_root))
                 state, running, waiting = aggregate(states)
                 previous = store.get()
                 store.update(state=state, running=running, waiting=waiting,

@@ -14,7 +14,7 @@ A Wi-Fi desktop display for Codex usage and task activity. This edition targets 
 | :---: | :---: |
 | <img src="docs/screens/done.png" width="200" alt="Completed"> | <img src="docs/screens/standby.png" width="200" alt="Standby clock"> |
 
-The display shows running, waiting for input, and completed states with distinct animated borders and optional sounds. After 15 seconds of inactivity it fades into a seven-segment clock. Weekly usage remaining, available resets, recovery time, and battery status remain visible. When Codex reports a five-hour allowance, the screen adds its remaining percentage and an hours/minutes reset countdown. Hold the touch screen to change brightness, volume, or Wi-Fi. The Windows tray companion starts at login and recovers from unexpected exits.
+The display shows running, waiting for input, and completed states with distinct animated borders and optional sounds. After 15 seconds of inactivity it fades into a seven-segment clock. Weekly usage remaining, available resets, recovery time, and battery status remain visible. The weekly reset countdown switches from days and hours to hours and minutes below 24 hours. When Codex reports a five-hour allowance, the screen adds its remaining percentage and an hours/minutes reset countdown. On battery power, the screen turns off after 60 seconds without interaction. Press the power button briefly or reconnect USB to wake it. Wi-Fi and sound alerts remain active. Hold the touch screen to change brightness, volume, or Wi-Fi. The Windows tray companion starts at login and recovers from unexpected exits.
 
 ## Quick start
 

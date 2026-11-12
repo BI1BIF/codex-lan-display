@@ -1,4 +1,5 @@
 import unittest
+import os
 import base64
 import http.client
 from http.server import ThreadingHTTPServer
@@ -63,6 +64,40 @@ class StatusTests(unittest.TestCase):
                 output.write(json.dumps(event('task_complete'))+'\n')
             self.assertEqual(aggregate(list(task_states(index, cache, candidates, time.time()))),
                              ('running', 1, 0))
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows byte-range lock')
+    def test_quiet_task_counts_only_while_writer_holds_lock(self):
+        import msvcrt
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            thread_id = '00000000-0000-4000-8000-000000000001'
+            path = root/'session.jsonl'
+            old = time.time() - 3600
+            path.write_text(json.dumps(event('task_started', started_at=old))+'\n', encoding='utf8')
+            os.utime(path, (old, old))
+            thread = {'id': thread_id, 'path': str(path)}
+            cache = Rollouts()
+            def states():
+                return list(task_states([thread], cache, [], time.time(), root))
+            with (root/f'{thread_id}.lock').open('w+b', buffering=0) as lock:
+                self.assertEqual(states(), ['unknown'])
+                msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+                try:
+                    self.assertEqual(states(), ['idle'])
+                    # Reopening writes settings and refreshes the log without a new turn.
+                    with path.open('a', encoding='utf8') as output:
+                        output.write(json.dumps(event('thread_settings_applied'))+'\n')
+                    self.assertEqual(states(), ['idle'])
+                    with path.open('a', encoding='utf8') as output:
+                        output.write(json.dumps(event('task_started', started_at=time.time()))+'\n')
+                    os.utime(path, (old, old))  # Exercise the quiet-turn path without waiting.
+                    self.assertEqual(states(), ['running'])
+                    with path.open('a', encoding='utf8') as output:
+                        output.write(json.dumps(event('task_complete'))+'\n')
+                    os.utime(path, (old, old))
+                    self.assertEqual(states(), ['done'])
+                finally:
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
 
     def test_priority(self):
         self.assertEqual(aggregate(['done','running','waiting']),('waiting',1,1))
